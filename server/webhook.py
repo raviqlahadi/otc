@@ -1,31 +1,14 @@
 import logging
 
-from fastapi import FastAPI, Request, Response, HTTPException, Query
+from fastapi import FastAPI, Request, Response, HTTPException, Query, Depends
 
 from config import settings
-from models import Platform, OutgoingMessage
+from models.messaging import OutgoingMessage, Platform
+from server.deps import get_flow_controller, get_gateway, get_redis
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Option Tracing Chatbot")
-
-# These will be set during startup via dependency injection
-_gateway = None
-_session_mgr = None
-_engine = None
-_feedback_gen = None
-_verification = None
-_redis = None
-
-
-def configure(gateway, session_mgr, engine, feedback_gen, verification, redis_client):
-    global _gateway, _session_mgr, _engine, _feedback_gen, _verification, _redis
-    _gateway = gateway
-    _session_mgr = session_mgr
-    _engine = engine
-    _feedback_gen = feedback_gen
-    _verification = verification
-    _redis = redis_client
 
 
 @app.get("/webhook")
@@ -41,52 +24,45 @@ async def verify_webhook(
 
 
 @app.post("/webhook")
-async def handle_webhook(request: Request):
+async def handle_webhook(
+    request: Request,
+    gateway=Depends(get_gateway),
+    flow_controller=Depends(get_flow_controller),
+    redis=Depends(get_redis),
+):
     """Process incoming WhatsApp messages."""
     body = await request.body()
 
-    if not _gateway.validate_webhook(Platform.WHATSAPP, dict(request.headers), body):
+    if not gateway.validate_webhook(Platform.WHATSAPP, dict(request.headers), body):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     payload = await request.json()
-    message = await _gateway.normalize(Platform.WHATSAPP, payload)
+    message = await gateway.normalize(Platform.WHATSAPP, payload)
 
     if message is None:
         return {"status": "ok"}
 
     # Deduplication
     dedup_key = f"msg:{message.message_id}"
-    if _redis:
-        already = await _redis.get(dedup_key)
+    if redis:
+        already = await redis.get(dedup_key)
         if already:
             return {"status": "ok"}
-        await _redis.set(dedup_key, "1", ex=3600)
+        await redis.set(dedup_key, "1", ex=3600)
 
-    # Process
+    # Process via FlowController
     try:
-        from server.flow import process_message
-        response_text = await process_message(
+        response_text = await flow_controller.handle(
             text=message.message_text,
             student_id=message.sender_id,
-            session_mgr=_session_mgr,
-            engine=_engine,
-            feedback_gen=_feedback_gen,
-            verification=_verification,
-            get_question_fn=_get_question,
         )
     except Exception as e:
         logger.error(f"Error processing message: {e}")
         response_text = "Maaf, sistem sedang gangguan. Silakan coba lagi nanti."
 
-    await _gateway.send(OutgoingMessage(
+    await gateway.send(OutgoingMessage(
         recipient_id=message.sender_id,
         text=response_text,
         platform=message.platform,
     ))
     return {"status": "ok"}
-
-
-async def _get_question(id_or_kc: str):
-    """Load question by ID or by KC (first available)."""
-    # This will be wired to actual DB in dependencies
-    return None

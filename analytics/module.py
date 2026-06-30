@@ -66,3 +66,43 @@ class AnalyticsModule:
             w.writerow([self._anonymize(r["student_id"]), r["kc_id"], f"{r['p_mastery']:.4f}",
                         f"{r['p_transition']:.4f}", r["status"], probs_str])
         return buf.getvalue()
+
+    async def export_affective_profiles(self) -> str:
+        """Export affective survey data with anonymised student IDs, CSV format."""
+        async with self._db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT student_id, amas_total, interest_total, anxiety_level, interest_level, is_complete, completed_at "
+                "FROM affective_survey ORDER BY student_id"
+            )
+        buf = StringIO()
+        w = csv.writer(buf)
+        w.writerow(["student_id", "amas_total", "interest_total", "anxiety_level", "interest_level", "is_complete", "completed_at"])
+        for r in rows:
+            w.writerow([self._anonymize(r["student_id"]), r["amas_total"], r["interest_total"],
+                        r["anxiety_level"], r["interest_level"], r["is_complete"], str(r["completed_at"] or "")])
+        return buf.getvalue()
+
+    async def export_feedback_personalisation_log(self) -> str:
+        """Export feedback personalisation audit log, CSV format."""
+        async with self._db.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT student_id, kc_id, anxiety_level, interest_level, opening_used, created_at "
+                "FROM feedback_personalisation ORDER BY student_id, created_at"
+            )
+        buf = StringIO()
+        w = csv.writer(buf)
+        w.writerow(["student_id", "kc_id", "anxiety_level", "interest_level", "opening_used", "timestamp"])
+        for r in rows:
+            w.writerow([self._anonymize(r["student_id"]), r["kc_id"], r["anxiety_level"],
+                        r["interest_level"], r["opening_used"], str(r["created_at"])])
+        return buf.getvalue()
+
+    async def export_full_research_dump(self) -> dict[str, str]:
+        """Export all research data as a dict of filename -> CSV content."""
+        return {
+            "learning_trajectories.csv": await self.export_learning_trajectories(),
+            "misconception_frequencies.csv": await self.export_misconception_frequencies(),
+            "diagnostic_outputs.csv": await self.export_diagnostic_outputs(),
+            "affective_profiles.csv": await self.export_affective_profiles(),
+            "feedback_personalisation_log.csv": await self.export_feedback_personalisation_log(),
+        }

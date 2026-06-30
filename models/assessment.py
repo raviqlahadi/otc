@@ -1,36 +1,5 @@
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Optional
-
-
-class Platform(Enum):
-    WHATSAPP = "whatsapp"
-    TELEGRAM = "telegram"
-    DISCORD = "discord"
-
-
-class FlowPhase(Enum):
-    QUESTION = "question"
-    RETRY = "retry"
-    FEEDBACK = "feedback"
-    VERIFICATION = "verification"
-    COMPLETED = "completed"
-
-
-@dataclass
-class NormalizedMessage:
-    sender_id: str
-    message_text: str
-    message_id: str
-    platform: Platform
-    timestamp: float
-
-
-@dataclass
-class OutgoingMessage:
-    recipient_id: str
-    text: str
-    platform: Platform
 
 
 @dataclass
@@ -39,6 +8,17 @@ class BKTParams:
     p_guess: float
     p_slip: float
     p_transit: float
+
+
+@dataclass
+class KCConfig:
+    kc_id: str
+    p_l0: float
+    p_guess: float
+    p_slip: float
+    p_transit: float
+    mastery_threshold: float = 0.8
+    needs_review_threshold: float = 0.5
 
 
 @dataclass
@@ -61,7 +41,7 @@ class Question:
     option_b: str
     option_c: str
     option_d: str
-    distractor_map: dict[str, str] = field(default_factory=dict)  # option -> misconception_id
+    distractor_map: dict[str, str] = field(default_factory=dict)
     is_verification: bool = False
     target_misconception_id: Optional[str] = None
 
@@ -72,17 +52,6 @@ class AnswerResult:
     misconception_id: Optional[str]
     attempt_number: int
     updated_mastery: StudentMastery
-
-
-@dataclass
-class SessionState:
-    student_id: str
-    current_kc_id: str
-    current_question_id: Optional[str]
-    attempt_count: int
-    flow_phase: FlowPhase
-    selected_options: list[dict] = field(default_factory=list)
-    session_id: str = ""
 
 
 @dataclass

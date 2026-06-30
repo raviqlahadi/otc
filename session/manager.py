@@ -46,6 +46,29 @@ class SessionManager:
         await self.save_session(state)
         return state
 
+    async def transition_to_survey(self, student_id: str, session_id: str = "") -> SessionState:
+        """Create a new session starting at DEMOGRAPHIC_SURVEY phase."""
+        state = SessionState(
+            student_id=student_id, current_kc_id="",
+            current_question_id=None, attempt_count=0,
+            flow_phase=FlowPhase.DEMOGRAPHIC_SURVEY, selected_options=[], session_id=session_id,
+        )
+        await self.save_session(state)
+        return state
+
+    async def transition_to_affective_survey(self, state: SessionState) -> SessionState:
+        """Transition from demographic to affective survey."""
+        state.flow_phase = FlowPhase.AFFECTIVE_SURVEY
+        await self.save_session(state)
+        return state
+
+    async def transition_to_assessment(self, state: SessionState, first_kc_id: str) -> SessionState:
+        """Transition from survey completion to KC assessment."""
+        state.current_kc_id = first_kc_id
+        state.flow_phase = FlowPhase.QUESTION
+        await self.save_session(state)
+        return state
+
     def _serialize(self, state: SessionState) -> dict[str, str]:
         return {
             "student_id": state.student_id,
